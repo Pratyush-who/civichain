@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template
+from flask import Flask, request, render_template, jsonify
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import torch
 import joblib
@@ -24,24 +24,26 @@ def home():
 
 @app.route('/predict', methods=["POST"])
 def predict():
-    text = request.form["description"]
+    data = request.get_json()
+    description = data['description']
 
     # --- Predict Priority ---
-    inputs_priority = priority_tokenizer(text, return_tensors="pt", truncation=True, padding=True).to("cuda")
+    inputs_priority = priority_tokenizer(description, return_tensors="pt", truncation=True, padding=True).to("cuda")
     outputs_priority = priority_model(**inputs_priority)
     pred_priority = torch.argmax(outputs_priority.logits, dim=1).item()
     priority = {0: "low", 1: "medium", 2: "high"}[pred_priority]
 
     # --- Predict Tags ---
-    inputs_tag = tag_tokenizer(text, return_tensors="pt", truncation=True, padding=True).to("cuda")
+    inputs_tag = tag_tokenizer(description, return_tensors="pt", truncation=True, padding=True).to("cuda")
     outputs_tag = tag_model(**inputs_tag)
     probs = torch.sigmoid(outputs_tag.logits).detach().cpu().numpy()[0]
     tags = mlb.inverse_transform(np.array([probs > 0.5]))[0]
 
-    return render_template("index.html", 
-                           description=text, 
-                           priority=priority, 
-                           tags=tags)
+    return jsonify({
+        "description": description,
+        "priority": priority,
+        "tags": tags,
+    })
 
 if __name__ == '__main__':
     app.run(debug=True)
